@@ -7,6 +7,8 @@ TEMP_SERVICE_CONFIG_PATH = os.path.join("/tmp", SERVICE_CONFIG_NAME)
 
 
 from assemblyline_v4_service.common.dynamic_service_helper import (
+    convert_sysmon_network,
+    convert_sysmon_processes,
     extract_iocs_from_text_blob,
     set_required_argument,
     set_optional_argument,
@@ -123,6 +125,7 @@ def dummy_request_class(dummy_task_class):
         def __init__(self):
             super(DummyRequest, self).__init__()
             self.task = dummy_task_class()
+            self.extracted = self.task.extracted
 
         def add_supplementary(self, path, name, description):
             self.task.supplementary.append(
@@ -213,13 +216,14 @@ class TestArtifact:
     @staticmethod
     def test_artifact_as_primitives():
         a = Artifact(
-            name="blah", path="blah", description="blah", to_be_extracted="blah"
+            name="blah", path="blah", description="blah", to_be_extracted="blah", sha256="blah"
         )
         assert a.as_primitives() == {
             "name": "blah",
             "path": "blah",
             "description": "blah",
             "to_be_extracted": "blah",
+            "sha256": "blah",
         }
 
 
@@ -4655,6 +4659,7 @@ class TestOntologyResults:
                         "path": "blah",
                         "description": "blah",
                         "to_be_extracted": True,
+                        "sha256": "blah",
                     }
                 ],
                 None,
@@ -4666,6 +4671,7 @@ class TestOntologyResults:
                         "path": "blah",
                         "description": "blah",
                         "to_be_extracted": False,
+                        "sha256": "blah",
                     }
                 ],
                 None,
@@ -8592,6 +8598,7 @@ class TestOntologyResults:
                     "path": "blah",
                     "description": "blah",
                     "to_be_extracted": True,
+                    "sha256": "blah",
                 }
             ],
         ],
@@ -8608,6 +8615,7 @@ class TestOntologyResults:
                 path=artifact["path"],
                 description=artifact["description"],
                 to_be_extracted=artifact["to_be_extracted"],
+                sha256=artifact["sha256"],
             )
             assert expected_artifact.as_primitives(), actual_validated_artifact_list[
                 index
@@ -8804,13 +8812,447 @@ class TestOntologyResults:
         assert p.end_time == "1970-01-01 00:00:02"
         assert p.objectid.time_observed == "1970-01-01 00:00:01"
 
+    @staticmethod
+    @pytest.mark.parametrize(
+        "sysmon, expected_process",
+        [([],
+          {}),
+         ([{"System": {"EventID": 2},
+            "EventData":
+            {
+             "Data":
+             [{"@Name": "ParentProcessId", "#text": "2"},
+              {"@Name": "Image", "#text": "blah.exe"},
+              {"@Name": "CommandLine", "#text": "./blah"},
+              {"@Name": "ProcessGuid", "#text": "{12345678-1234-5678-1234-567812345679}"}]}}],
+          {}),
+         ([{"System": {"EventID": 1},
+            "EventData":
+            {
+             "Data":
+             [{"@Name": "UtcTime", "#text": "1970-01-01 12:40:30.123"},
+              {"@Name": "ProcessId", "#text": "1"},
+              {"@Name": "ParentProcessId", "#text": "2"},
+              {"@Name": "Image", "#text": "blah.exe"},
+              {"@Name": "CommandLine", "#text": "./blah"},
+              {"@Name": "ProcessGuid", "#text": "{12345678-1234-5678-1234-567812345679}"}]}}],
+          {'start_time': "1970-01-01 12:40:30",
+           'end_time': "9999-12-31 23:59:59",
+           'objectid':
+           {'guid': '{12345678-1234-5678-1234-567812345679}', 'tag': 'blah.exe', 'treeid': None,
+            'time_observed': "1970-01-01 12:40:30", 'ontology_id': 'process_4Kj6sgz5Y8rvIQnT9nPBS2',
+            'processtree': None, 'service_name': 'CAPE',},
+           'pobjectid': None,
+           'pimage': None, 'pcommand_line': None, 'ppid': 2, 'pid': 1, 'image': 'blah.exe', 'command_line': './blah',
+           'integrity_level': None, 'image_hash': None, 'original_file_name': None}),
+         ([{"System": {"EventID": 1},
+            "EventData":
+            {
+             "Data":
+             [
+              {"@Name": "UtcTime", "#text": "1970-01-01 12:40:30.123"},
+              {"@Name": "ProcessId", "#text": "1"},
+              {"@Name": "ParentProcessId", "#text": "2"},
+              {"@Name": "Image", "#text": "blah.exe"},
+              {"@Name": "CommandLine", "#text": "./blah"},
+              {"@Name": "ProcessGuid", "#text": "{12345678-1234-5678-1234-567812345679}"},
+              {"@Name": "SourceProcessGuid", "#text": "{12345678-1234-5678-1234-567812345678}"}]}}],
+          {'start_time': "1970-01-01 12:40:30",
+           'end_time': "9999-12-31 23:59:59",
+           'objectid':
+           {'guid': '{12345678-1234-5678-1234-567812345679}', 'tag': 'blah.exe', 'treeid': None,
+            'time_observed': "1970-01-01 12:40:30", 'ontology_id': 'process_4Kj6sgz5Y8rvIQnT9nPBS2',
+            'processtree': None, 'service_name': 'CAPE'},
+           'pobjectid': None,
+           'pimage': None, 'pcommand_line': None, 'ppid': 2, 'pid': 1, 'image': 'blah.exe', 'command_line': './blah',
+           'integrity_level': None, 'image_hash': None, 'original_file_name': None}),
+         ([{"System": {"EventID": 1},
+            "EventData":
+            {
+             "Data":
+             [{"@Name": "UtcTime", "#text": "1970-01-01 12:40:30.123"},
+              {"@Name": "ProcessGuid", "#text": "{12345678-1234-5678-1234-567812345678}"},
+              {"@Name": "ProcessId", "#text": "123"},
+              {"@Name": "Image", "#text": "blah"}]}}],
+          {'start_time': '1970-01-01 12:40:30', 'end_time': "9999-12-31 23:59:59",
+           'objectid':
+           {'guid': '{12345678-1234-5678-1234-567812345678}', 'tag': 'blah', 'treeid': None, 'processtree': None,
+            'time_observed': '1970-01-01 12:40:30', 'ontology_id': 'process_5FPZdIxfHmzxsWKUlsSNGl', 'service_name': 'CAPE'},
+           'pobjectid': None,
+           'pimage': None, 'pcommand_line': None, 'ppid': None, 'pid': 123, 'image': 'blah', 'command_line': None,
+           'integrity_level': None, 'image_hash': None, 'original_file_name': None}),
+         ([{"System": {"EventID": 1},
+            "EventData":
+            {
+             "Data":
+             [{"@Name": "UtcTime", "#text": "1970-01-01 12:40:30.123"},
+              {"@Name": "ProcessGuid", "#text": "{12345678-1234-5678-1234-567812345678}"},
+              {"@Name": "ProcessId", "#text": "123"},
+              {"@Name": "Image", "#text": "blah"}]}},
+           {"System": {"EventID": 5},
+            "EventData":
+            {
+               "Data":
+               [{"@Name": "UtcTime", "#text": "1970-01-01 12:40:31.123"},
+                {"@Name": "ProcessGuid", "#text": "{12345678-1234-5678-1234-567812345678}"},
+                   {"@Name": "ProcessId", "#text": "123"},
+                   {"@Name": "Image", "#text": "blah"}]}}],
+          {'start_time': '1970-01-01 12:40:30', 'end_time': "1970-01-01 12:40:31",
+           'objectid':
+           {'guid': '{12345678-1234-5678-1234-567812345678}', 'tag': 'blah', 'treeid': None, 'processtree': None,
+            'time_observed': '1970-01-01 12:40:30', 'ontology_id': 'process_5FPZdIxfHmzxsWKUlsSNGl', 'service_name': 'CAPE'},
+           'pobjectid': None,
+           'pimage': None, 'pcommand_line': None, 'ppid': None, 'pid': 123, 'image': 'blah', 'command_line': None,
+           'integrity_level': None, 'image_hash': None, 'original_file_name': None}), ])
+    def test_convert_sysmon_processes(sysmon, expected_process, mocker):
+        from uuid import UUID
+        so = OntologyResults(service_name="CAPE")
+        mocker.patch.object(so, "sandboxes", return_value="blah")
+        safelist = {}
+        convert_sysmon_processes(sysmon, safelist, so)
+        if expected_process:
+            proc_as_prims = so.processes[0].as_primitives()
+            _ = proc_as_prims["objectid"].pop("session")
+            assert proc_as_prims == expected_process
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "sysmon, actual_network, correct_network",
+        [
+            ([], {}, {}),
+            ([], {}, {}),
+            ([{"System": {"EventID": '1'}}], {}, {}),
+            ([{
+                "System": {"EventID": '3'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                  {"@Name": "SourcePort", "#text": "123"},
+                                  {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                  {"@Name": "DestinationPort", "#text": "321"},
+                              ]
+                              }}], {"tcp": []}, {'tcp': []}),
+            ([{
+                "System": {"EventID": '3'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "Protocol", "#text": "tcp"},
+                                  {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                  {"@Name": "SourcePort", "#text": "123"},
+                                  {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                  {"@Name": "DestinationPort", "#text": "321"},
+                              ]
+                              }}], {"tcp": []}, {'tcp': [{'dport': 321, 'dst': '11.11.11.11', 'guid': '{blah}', 'image': 'blah.exe', 'pid': 123, 'sport': 123, 'src': '10.10.10.10', 'time': 1627054921.001}]}),
+            ([{
+                "System": {"EventID": '3'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "Protocol", "#text": "tcp"},
+                                  {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                  {"@Name": "SourcePort", "#text": "123"},
+                                  {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                  {"@Name": "DestinationPort", "#text": "321"},
+                              ]
+                              }}], {"tcp": [{"dst": '11.11.11.11', "dport": 321, "src": '10.10.10.10', "sport": 123}]}, {'tcp': [
+                                  {'dport': 321, 'dst': '11.11.11.11', 'guid': '{blah}', 'image': 'blah.exe', 'pid': 123, 'sport': 123,
+                                   'src': '10.10.10.10', 'time': 1627054921.001}]}),
+            ([{
+                "System": {"EventID": '3'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "Protocol", "#text": "tcp"},
+                                  {"@Name": "SourceIp", "#text": "::ffff:7f00:1"},
+                                  {"@Name": "SourcePort", "#text": "123"},
+                                  {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                  {"@Name": "DestinationPort", "#text": "321"},
+                              ]
+                              }}], {"tcp": []}, {'tcp': []}),
+            ([{
+                "System": {"EventID": '3'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "Protocol", "#text": "tcp"},
+                                  {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                  {"@Name": "SourcePort", "#text": "123"},
+                                  {"@Name": "DestinationIp", "#text": "::ffff:7f00:1"},
+                                  {"@Name": "DestinationPort", "#text": "321"},
+                              ]
+                              }}], {"tcp": []}, {'tcp': []}),
+            ([{
+                "System": {"EventID": '22'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "QueryName", "#text": "blah.com"},
+                                  {"@Name": "QueryResults", "#text": "::ffffff:10.10.10.10;"},
+                              ]
+                              }}], {"dns": []}, {'dns': [
+                                  {
+                                      'answers': [{'data': '10.10.10.10', 'type': 'A'}],
+                                      'guid': '{blah}',
+                                      'image': 'blah.exe',
+                                      'pid': 123,
+                                      'request': 'blah.com',
+                                      'time': 1627054921.001,
+                                      'type': 'A'
+                                  }]}),
+            ([{
+                "System": {"EventID": '22'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "QueryName", "#text": "blah.com"},
+                                  {"@Name": "QueryResults", "#text": "::ffffff:10.10.10.10;"},
+                              ]
+                              }}], {"dns": []}, {'dns': []}),
+            ([{
+                "System": {"EventID": '22'},
+                "EventData": {"Data":
+                              [
+                                  {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                  {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                  {"@Name": "ProcessId", "#text": "123"},
+                                  {"@Name": "Image", "#text": "blah.exe"},
+                                  {"@Name": "QueryName", "#text": "blah.com"},
+                                  {"@Name": "QueryResults", "#text": "::ffffff:10.10.10.10;"},
+                              ]
+                              }}], {"dns": [{"request": "blah.com"}]}, {'dns': [
+                                  {
+                                      'answers': [{'data': '10.10.10.10', 'type': 'A'}],
+                                      'guid': '{blah}',
+                                      'image': 'blah.exe',
+                                      'pid': 123,
+                                      'request': 'blah.com',
+                                      'time': 1627054921.001,
+                                      'type': 'A'
+                                  }]}
+             ),
+
+
+        ]
+    )
+    def test_convert_sysmon_network_cuckoo(sysmon, actual_network, correct_network):
+        safelist = {}
+        convert_sysmon_network(sysmon, actual_network, safelist, convert_timestamp_to_epoch=True)
+        assert actual_network == correct_network
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "sysmon, actual_network, correct_network",
+        [
+            ([], {}, {}),
+            ([], {}, {}),
+            ([{"System": {"EventID": "1"}}], {}, {}),
+            (
+                [
+                    {
+                        "System": {"EventID": "3"},
+                        "EventData": {
+                            "Data": [
+                                {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                {"@Name": "ProcessId", "#text": "123"},
+                                {"@Name": "Image", "#text": "blah.exe"},
+                                {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                {"@Name": "SourcePort", "#text": "123"},
+                                {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                {"@Name": "DestinationPort", "#text": "321"},
+                            ]
+                        },
+                    }
+                ],
+                {"tcp": []},
+                {"tcp": []},
+            ),
+            (
+                [
+                    {
+                        "System": {"EventID": "3"},
+                        "EventData": {
+                            "Data": [
+                                {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                {"@Name": "ProcessId", "#text": "123"},
+                                {"@Name": "Image", "#text": "blah.exe"},
+                                {"@Name": "Protocol", "#text": "tcp"},
+                                {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                {"@Name": "SourcePort", "#text": "123"},
+                                {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                {"@Name": "DestinationPort", "#text": "321"},
+                            ]
+                        },
+                    }
+                ],
+                {"tcp": []},
+                {
+                    "tcp": [
+                        {
+                            "dport": 321,
+                            "dst": "11.11.11.11",
+                            "guid": "{blah}",
+                            "image": "blah.exe",
+                            "pid": 123,
+                            "sport": 123,
+                            "src": "10.10.10.10",
+                            "time": "2021-07-23 15:42:01",
+                        }
+                    ]
+                },
+            ),
+            (
+                [
+                    {
+                        "System": {"EventID": "3"},
+                        "EventData": {
+                            "Data": [
+                                {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                {"@Name": "ProcessId", "#text": "123"},
+                                {"@Name": "Image", "#text": "blah.exe"},
+                                {"@Name": "Protocol", "#text": "tcp"},
+                                {"@Name": "SourceIp", "#text": "10.10.10.10"},
+                                {"@Name": "SourcePort", "#text": "123"},
+                                {"@Name": "DestinationIp", "#text": "11.11.11.11"},
+                                {"@Name": "DestinationPort", "#text": "321"},
+                            ]
+                        },
+                    }
+                ],
+                {"tcp": [{"dst": "11.11.11.11", "dport": 321, "src": "10.10.10.10", "sport": 123}]},
+                {
+                    "tcp": [
+                        {
+                            "dport": 321,
+                            "dst": "11.11.11.11",
+                            "guid": "{blah}",
+                            "image": "blah.exe",
+                            "pid": 123,
+                            "sport": 123,
+                            "src": "10.10.10.10",
+                            "time": "2021-07-23 15:42:01",
+                        }
+                    ]
+                },
+            ),
+            (
+                [
+                    {
+                        "System": {"EventID": "22"},
+                        "EventData": {
+                            "Data": [
+                                {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                {"@Name": "ProcessId", "#text": "123"},
+                                {"@Name": "Image", "#text": "blah.exe"},
+                                {"@Name": "QueryName", "#text": "blah.com"},
+                                {"@Name": "QueryResults", "#text": "::ffffff:10.10.10.10;"},
+                            ]
+                        },
+                    }
+                ],
+                {"dns": []},
+                {
+                    "dns": [
+                        {
+                            "answers": [{"data": "10.10.10.10", "type": "A"}],
+                            "guid": "{blah}",
+                            "image": "blah.exe",
+                            "pid": 123,
+                            "request": "blah.com",
+                            "time": "2021-07-23 15:42:01",
+                            "type": "A",
+                        }
+                    ]
+                },
+            ),
+            (
+                [
+                    {
+                        "System": {"EventID": "22"},
+                        "EventData": {
+                            "Data": [
+                                {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                {"@Name": "ProcessId", "#text": "123"},
+                                {"@Name": "Image", "#text": "blah.exe"},
+                                {"@Name": "QueryName", "#text": "blah.com"},
+                                {"@Name": "QueryResults", "#text": "::ffffff:10.10.10.10;"},
+                            ]
+                        },
+                    }
+                ],
+                {"dns": []},
+                {"dns": []},
+            ),
+            (
+                [
+                    {
+                        "System": {"EventID": "22"},
+                        "EventData": {
+                            "Data": [
+                                {"@Name": "UtcTime", "#text": "2021-07-23 15:42:01.001"},
+                                {"@Name": "ProcessGuid", "#text": "{blah}"},
+                                {"@Name": "ProcessId", "#text": "123"},
+                                {"@Name": "Image", "#text": "blah.exe"},
+                                {"@Name": "QueryName", "#text": "blah.com"},
+                                {"@Name": "QueryResults", "#text": "::ffffff:10.10.10.10;"},
+                            ]
+                        },
+                    }
+                ],
+                {"dns": [{"request": "blah.com"}]},
+                {
+                    "dns": [
+                        {
+                            "answers": [{"data": "10.10.10.10", "type": "A"}],
+                            "guid": "{blah}",
+                            "image": "blah.exe",
+                            "pid": 123,
+                            "request": "blah.com",
+                            "time": "2021-07-23 15:42:01",
+                            "type": "A",
+                        }
+                    ]
+                },
+            ),
+        ],
+    )
+    def test_convert_sysmon_network_cape(sysmon, actual_network, correct_network):
+        safelist = {}
+        convert_sysmon_network(sysmon, actual_network, safelist)
+        assert actual_network == correct_network
 
 @pytest.mark.parametrize(
-    "blob, enforce_min, correct_tags, expected_iocs",
+    "blob, enforce_min, enforce_max, correct_tags, expected_iocs",
     [
-        ("", False, {}, [{}]),
+        ("", False, False, {}, [{}]),
         (
             "192.168.100.1",
+            False,
             False,
             {"network.dynamic.ip": ["192.168.100.1"]},
             [],
@@ -8818,11 +9260,13 @@ class TestOntologyResults:
         (
             "blah.ca",
             False,
+            False,
             {"network.dynamic.domain": ["blah.ca"]},
             [],
         ),
         (
             "https://blah.ca",
+            False,
             False,
             {
                 "network.dynamic.domain": ["blah.ca"],
@@ -8832,6 +9276,7 @@ class TestOntologyResults:
         ),
         (
             "https://blah.ca/blah",
+            False,
             False,
             {
                 "network.dynamic.domain": ["blah.ca"],
@@ -8843,11 +9288,13 @@ class TestOntologyResults:
         (
             "drive:\\\\path to\\\\microsoft office\\\\officeverion\\\\winword.exe",
             False,
+            False,
             {},
             [{}],
         ),
         (
             "DRIVE:\\\\PATH TO\\\\MICROSOFT OFFICE\\\\OFFICEVERION\\\\WINWORD.EXE C:\\\\USERS\\\\BUDDY\\\\APPDATA\\\\LOCAL\\\\TEMP\\\\BLAH.DOC",
+            False,
             False,
             {},
             [{}],
@@ -8855,17 +9302,20 @@ class TestOntologyResults:
         (
             "DRIVE:\\\\PATH TO\\\\PYTHON27.EXE C:\\\\USERS\\\\BUDDY\\\\APPDATA\\\\LOCAL\\\\TEMP\\\\BLAH.py",
             False,
+            False,
             {},
             [{}],
         ),
         (
             "POST /some/thing/bad.exe HTTP/1.0\nUser-Agent: Mozilla\nHost: evil.ca\nAccept: */*\nContent-Type: application/octet-stream\nContent-Encoding: binary\n\nConnection: close",
             False,
+            False,
             {"network.dynamic.domain": ["evil.ca"]},
             [],
         ),
         (
             "http://evil.ca/some/thing/bad.exe",
+            False,
             False,
             {
                 "network.dynamic.domain": ["evil.ca"],
@@ -8874,10 +9324,59 @@ class TestOntologyResults:
             },
             [{"uri": "http://evil.ca/some/thing/bad.exe"}],
         ),
-        ("POST abc.de#fgh", True, {}, [{}]),
+        ("POST abc.de#fgh", True, False, {}, [{}]),
+        (
+            "'<script src=\"https://blah.link/blah/blah?filename=blah.js\"></script>'",
+            True,
+            False,
+            {
+                "network.dynamic.domain": ["blah.link"],
+                "network.dynamic.uri": ["https://blah.link/blah/blah?filename=blah.js"],
+                "network.dynamic.uri_path": ['/blah/blah?filename=blah.js']
+            },
+            [{"uri": "https://blah.link/blah/blah?filename=blah.js"}]
+        ),
+        (
+            "POST abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcde.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.com ...(Truncated)",
+            True,
+            True,
+            {},
+            [{}]
+        ),
+        (
+            "POST blah.adobe.com)",
+            True,
+            True,
+            {},
+            [{}]
+        ),
+        (
+            "Wscript.Shell.Run(blah.py)",
+            True,
+            True,
+            {},
+            [{}]
+        ),
+        (
+            "blah microsoft.net blah",
+            True,
+            True,
+            {},
+            [{}]
+        ),
+        (
+            "blah blahhttps://microsoft.net blah",
+            True,
+            True,
+            {
+                "network.dynamic.domain": ["microsoft.net"],
+                "network.dynamic.uri": ["https://microsoft.net"],
+            },
+            [{"uri": "https://microsoft.net"}]
+        ),
     ],
 )
-def test_extract_iocs_from_text_blob(blob, enforce_min, correct_tags, expected_iocs):
+def test_extract_iocs_from_text_blob(blob, enforce_min, enforce_max, correct_tags, expected_iocs):
     from assemblyline_v4_service.common.result import ResultTableSection
 
     test_result_section = ResultTableSection("blah")
@@ -8886,6 +9385,7 @@ def test_extract_iocs_from_text_blob(blob, enforce_min, correct_tags, expected_i
         name="blah",
         type="CUCKOO",
     )
+    safelist = {"regex": {"network.dynamic.domain": [".+\.adobe\.com$"]}}
     default_iocs = []
     source = ObjectID(ontology_id="blah", tag="blah", service_name="blah")
     extract_iocs_from_text_blob(
@@ -8894,6 +9394,8 @@ def test_extract_iocs_from_text_blob(blob, enforce_min, correct_tags, expected_i
         so_sig=so_sig,
         source=source,
         enforce_char_min=enforce_min,
+        enforce_domain_char_max=enforce_max,
+        safelist=safelist,
     )
     assert test_result_section.tags == correct_tags
     if correct_tags:

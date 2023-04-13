@@ -10,10 +10,12 @@ DEFAULT_AUTH_KEY = "ThisIsARandomAuthKey...ChangeMe!"
 DEVELOPMENT_MODE = False
 
 with StringIO() as stack_trace:
-    # Check if run_service_once is in the stack trace to determine if we're running the service in a development mode
+    # Check if run_service_once, pytest or assemblyline_v4_service.testing.helper is in the stack trace to determine if we're running the service in a development mode
     traceback.print_stack(file=stack_trace)
     stack_trace.seek(0)
-    if 'run_service_once' in stack_trace.read():
+    read_stack_trace = stack_trace.read()
+
+    if any(msg in read_stack_trace for msg in ['run_service_once', 'pytest', 'assemblyline_v4_service.testing.helper']):
         DEVELOPMENT_MODE = True
 
 
@@ -36,6 +38,8 @@ class ServiceAPI:
             service_name=service_attributes.name,
             service_version=service_attributes.version
         ))
+        if self.service_api_host.startswith('https'):
+            self.session.verify = os.environ.get('SERVICE_SERVER_ROOT_CA_PATH', '/etc/assemblyline/ssl/al_root-ca.crt')
 
     def _with_retries(self, func, url):
         retries = 0

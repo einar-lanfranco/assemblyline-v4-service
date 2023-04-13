@@ -7,13 +7,6 @@ from assemblyline.odm.base import DOMAIN_ONLY_REGEX, DOMAIN_REGEX, FULL_URI, IP_
 from assemblyline_v4_service.common.result import ResultSection
 from assemblyline_v4_service.common.safelist_helper import is_tag_safelisted
 
-FALSE_POSITIVE_DOMAINS_FOUND_IN_PATHS = ["microsoft.net", "wscript.shell"]
-COMMON_FILE_EXTENSIONS = [
-    'bat', 'bin', 'cpl', 'dll', 'doc', 'docm', 'docx', 'dotm', 'elf', 'eml', 'exe', 'hta', 'htm', 'html',
-    'hwp', 'jar', 'js', 'lnk', 'mht', 'msg', 'msi', 'pdf', 'potm', 'potx', 'pps', 'ppsm', 'ppsx', 'ppt',
-    'pptm', 'pptx', 'ps1', 'pub', 'py', 'pyc', 'rar', 'rtf', 'sh', 'swf', 'vbs', 'wsf', 'xls', 'xlsm', 'xlsx'
-]
-
 
 def add_tag(
     result_section: ResultSection,
@@ -81,6 +74,11 @@ def _validate_tag(
     if safelist is None:
         safelist = {}
 
+    if tag.startswith("network.static."):
+        network_tag_type = "static"
+    else:
+        network_tag_type = "dynamic"
+
     regex = _get_regex_for_tag(tag)
     if regex and not match(regex, value):
         return False
@@ -88,12 +86,7 @@ def _validate_tag(
     if "ip" in tag and not is_valid_ip(value):
         return False
 
-    if "domain" in tag:
-        if not is_valid_domain(value):
-            return False
-        elif value in FALSE_POSITIVE_DOMAINS_FOUND_IN_PATHS:
-            return False
-        elif isinstance(value, str) and value.split(".")[-1] in COMMON_FILE_EXTENSIONS:
+    if "domain" in tag and not is_valid_domain(value):
             return False
 
     if is_tag_safelisted(value, [tag], safelist):
@@ -106,13 +99,13 @@ def _validate_tag(
         domain = search(DOMAIN_REGEX, value)
         if domain:
             domain = domain.group()
-            valid_domain = _validate_tag(result_section, "network.dynamic.domain", domain, safelist)
+            valid_domain = _validate_tag(result_section, f"network.{network_tag_type}.domain", domain, safelist)
         # Then try to get the IP
         valid_ip = False
         ip = search(IP_REGEX, value)
         if ip:
             ip = ip.group()
-            valid_ip = _validate_tag(result_section, "network.dynamic.ip", ip, safelist)
+            valid_ip = _validate_tag(result_section, f"network.{network_tag_type}.ip", ip, safelist)
 
         if value not in [domain, ip] and (valid_domain or valid_ip):
             result_section.add_tag(tag, safe_str(value))

@@ -27,6 +27,7 @@ warnings.filterwarnings("ignore")
 
 LOG_LEVEL = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO"))
 UPDATES_DIR = os.environ.get('UPDATES_DIR', '/updates')
+UPDATES_CA = os.environ.get('UPDATES_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
 PRIVILEGED = os.environ.get('PRIVILEGED', 'false') == 'true'
 
 RECOVERABLE_RE_MSG = [
@@ -219,16 +220,26 @@ class ServiceBase:
 
     @property
     def working_directory(self):
-        temp_dir = os.path.join(os.environ.get('TASKING_DIR', tempfile.gettempdir()), 'working_directory')
-        if not os.path.isdir(temp_dir):
-            os.makedirs(temp_dir)
-        if self._working_directory is None:
-            self._working_directory = tempfile.mkdtemp(dir=temp_dir)
+        # If no working directory is assigned
+        if not self._working_directory:
+            if self._task:
+                # Then use the working directory provided by the task
+                self._working_directory = self._task.working_directory
+            else:
+                # Or create a new working directory
+                temp_dir = os.path.join(os.environ.get('TASKING_DIR', tempfile.gettempdir()), 'working_directory')
+                if not os.path.isdir(temp_dir):
+                    os.makedirs(temp_dir)
+                self._working_directory = tempfile.mkdtemp(dir=temp_dir)
+
         return self._working_directory
 
     # Only relevant for services using updaters (reserving 'updates' as the defacto container name)
     def _download_rules(self):
-        url_base = f"http://{self.dependencies['updates']['host']}:{self.dependencies['updates']['port']}/"
+        scheme, verify = 'http', None
+        if os.path.exists(UPDATES_CA):
+            scheme, verify = 'https', UPDATES_CA
+        url_base = f"{scheme}://{self.dependencies['updates']['host']}:{self.dependencies['updates']['port']}/"
         headers = {
             'X_APIKEY': self.dependencies['updates']['key']
         }
@@ -236,7 +247,7 @@ class ServiceBase:
         # Check if there are new signatures
         retries = 0
         while True:
-            resp = requests.get(url_base + 'status')
+            resp = requests.get(url_base + 'status', verify=verify)
             resp.raise_for_status()
             status = resp.json()
             if self.update_time is not None and self.update_time >= status['local_update_time']:
@@ -260,7 +271,7 @@ class ServiceBase:
         old_rules_list = self.rules_list
         try:
             with os.fdopen(buffer_handle, 'wb') as buffer:
-                resp = requests.get(url_base + 'tar', headers=headers)
+                resp = requests.get(url_base + 'tar', headers=headers, verify=verify)
                 resp.raise_for_status()
                 for chunk in resp.iter_content(chunk_size=1024):
                     buffer.write(chunk)
