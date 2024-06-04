@@ -37,6 +37,11 @@ class OntologyHelper:
         if model in ONTOLOGY_FILETYPE_MODELS:
             self._file_info[model.__name__.lower()] = model(data)
 
+    def get_result_part(self, oid):
+        if not oid:
+            return None
+        return self._result_parts.get(oid)
+
     def add_result_part(self, model: Model, data: Dict) -> str:
         if not data:
             self.log.warning(f'No data given to apply to model {model.__name__}')
